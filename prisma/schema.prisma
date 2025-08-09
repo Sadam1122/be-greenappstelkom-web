@@ -1,0 +1,244 @@
+// Generator and Datasource
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+enum Role {
+  SUPERADMIN
+  ADMIN
+  PETUGAS
+  NASABAH
+}
+
+enum TransactionType {
+  PICKUP
+  DROPOFF
+}
+
+enum TransactionStatus {
+  PENDING      // Menunggu konfirmasi dan penimbangan oleh Petugas
+  COMPLETED    // Telah diproses dan poin telah diberikan
+  CANCELLED    // Dibatalkan oleh Nasabah atau Admin
+}
+
+enum PartnerType {
+  GOVERNMENT
+  INSTITUTION
+  COLLECTOR
+  OTHER
+}
+
+enum FinancialEntryType {
+  INCOME
+  EXPENSE
+}
+
+// --- MODEL LOKASI TUNGGAL ---
+/// Merepresentasikan satu unit lokasi operasional (Desa/Kelurahan).
+/// Ini adalah model sentral untuk mengelompokkan semua data geografis.
+model Location {
+  id        String @id @default(cuid())
+  desa      String // Nama Desa atau Kelurahan
+  kecamatan String
+  kabupaten String
+
+  // Relasi: Satu Lokasi (Desa) memiliki ekosistemnya sendiri
+  users            User[]
+  tps3r            Tps3r[]
+  rewards          Reward[]
+  partners         Partner[]
+  financials       FinancialEntry[]
+  wasteCategories  WasteCategory[]
+  transactions     Transaction[]
+
+  @@unique([desa, kecamatan, kabupaten], name: "unique_location")
+  @@index([kabupaten])
+  @@index([kecamatan])
+}
+
+// --- MODEL PENGGUNA & AKSES ---
+/// Merepresentasikan semua pengguna dalam sistem.
+/// Lingkup data ditentukan oleh relasi ke `Location` (Desa).
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(NASABAH)
+  avatar    String?
+  points    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // --- Lingkup Kerja & Alamat ---
+  // SUPERADMIN akan memiliki locationId NULL untuk akses global.
+  // ADMIN, PETUGAS, dan NASABAH wajib terikat pada satu Lokasi (Desa).
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  // Detail alamat spesifik untuk NASABAH, melengkapi data dari `Location`
+  rw String? // Rukun Warga
+  rt String? // Rukun Tetangga
+
+  // Relasi lainnya
+  transactionsInitiated Transaction[] @relation("InitiatedByUser") // Transaksi milik nasabah
+  transactionsProcessed Transaction[] @relation("ProcessedByUser") // Transaksi yang dikonfirmasi petugas
+  rewardRedeems         RewardRedemption[]
+  partnerProfile        Partner?
+
+  @@index([locationId])
+  @@index([role])
+}
+
+// --- MODEL OPERASIONAL ---
+/// Kategori sampah yang berlaku di satu Lokasi (Desa).
+model WasteCategory {
+  id           String   @id @default(cuid())
+  name         String
+  pointsPerKg  Int
+  description  String?
+  color        String?
+  locationId   String
+  location     Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([name, locationId])
+  @@index([locationId])
+}
+
+/// Mencatat setiap transaksi sampah dari pengajuan hingga konfirmasi.
+model Transaction {
+  id               String            @id @default(cuid())
+  // Siapa Nasabah pemilik sampah
+  userId           String
+  user             User              @relation("InitiatedByUser", fields: [userId], references: [id])
+
+  wasteCategoryId  String
+  wasteCategory    WasteCategory     @relation(fields: [wasteCategoryId], references: [id])
+
+  type             TransactionType
+  status           TransactionStatus @default(PENDING)
+
+  // Data Awal dari Nasabah
+  locationDetail   String   // Alamat lengkap (RT/RW/Jalan)
+  scheduledDate    DateTime
+  photos           String[] @default([]) // Foto sampah dari nasabah
+
+  // Data Konfirmasi oleh Petugas/Admin
+  actualWeight     Float?
+  points           Int      @default(0)
+  notes            String?  // Catatan dari petugas
+
+  // Siapa Petugas/Admin yang memproses
+  processedByUserId String?
+  processedByUser   User?    @relation("ProcessedByUser", fields: [processedByUserId], references: [id])
+
+  completedDate    DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relasi langsung ke Lokasi (Desa) untuk query yang efisien
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id])
+
+  @@index([userId])
+  @@index([processedByUserId])
+  @@index([status])
+  @@index([locationId])
+}
+
+/// Data TPS3R yang ada di sebuah Lokasi (Desa).
+model Tps3r {
+  id          String   @id @default(cuid())
+  name        String
+  status      String
+  capacity    Float
+  currentLoad Float
+  manager     String
+  lastUpdated DateTime @updatedAt
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+}
+
+/// Hadiah yang dapat ditukarkan dengan poin, spesifik per Lokasi (Desa).
+model Reward {
+  id             String   @id @default(cuid())
+  name           String
+  description    String
+  pointsRequired Int
+  stock          Int
+  icon           String?
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  redemptions    RewardRedemption[]
+
+  @@index([locationId])
+}
+
+/// Mitra yang bekerja sama dengan pengelola di sebuah Lokasi (Desa).
+model Partner {
+  id          String     @id @default(cuid())
+  userId      String     @unique
+  user        User       @relation(fields: [userId], references: [id])
+  companyName String
+  type        PartnerType
+  address     String?
+  phone       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  locationId  String
+  location    Location   @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+}
+
+// --- MODEL KEUANGAN & AUDIT ---
+/// Pencatatan keuangan (pemasukan dan pengeluaran) per Lokasi (Desa).
+model FinancialEntry {
+  id                   String              @id @default(cuid())
+  type                 FinancialEntryType
+  amount               Float
+  description          String
+  date                 DateTime
+  relatedTransactionId String?
+  createdByUserId      String
+  createdAt            DateTime            @default(now())
+  locationId           String
+  location             Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+  @@index([type])
+}
+
+/// Riwayat penukaran hadiah oleh pengguna.
+model RewardRedemption {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  rewardId    String
+  reward      Reward   @relation(fields: [rewardId], references: [id])
+  pointsSpent Int
+  redeemedAt  DateTime @default(now())
+
+  @@index([userId, rewardId])
+}
+
+/// Log untuk semua aktivitas penting dalam sistem untuk tujuan audit.
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  details   Json
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+}
