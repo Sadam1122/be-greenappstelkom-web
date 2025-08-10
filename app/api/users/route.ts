@@ -65,17 +65,28 @@ export async function POST(request: Request) {
   if (pre) return pre
   try {
     const claims = await requireAuth()
-    requireRole(claims, "SUPERADMIN", "ADMIN")
+    // --- PERBAIKAN DI SINI: Izinkan PETUGAS ---
+    requireRole(claims, "SUPERADMIN", "ADMIN", "PETUGAS")
+
     const json = await request.json()
     const data = createUserSchema.parse(json)
 
     assertRoleLocationCombination(data.role, data.locationId ?? null)
 
+    // Aturan keamanan untuk ADMIN
     if (claims.role === "ADMIN") {
       if (!claims.locationId) throw new ForbiddenError("Location scope required")
       if (data.role === "SUPERADMIN") throw new ForbiddenError("ADMIN cannot create SUPERADMIN")
       if (data.locationId !== claims.locationId) throw new ForbiddenError("ADMIN can only create within their location")
     }
+    
+    // --- TAMBAHAN: Aturan keamanan untuk PETUGAS ---
+    if (claims.role === "PETUGAS") {
+      if (!claims.locationId) throw new ForbiddenError("Location scope required for PETUGAS");
+      if (data.role !== "NASABAH") throw new ForbiddenError("PETUGAS can only create NASABAH users");
+      if (data.locationId !== claims.locationId) throw new ForbiddenError("PETUGAS can only create users within their location");
+    }
+
 
     const hashed = await bcrypt.hash(data.password, 10)
 

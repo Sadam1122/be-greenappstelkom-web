@@ -25,8 +25,12 @@ export async function GET(request: Request) {
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: "desc" },
-      } as any),
+        // --- PERBAIKAN DI SINI ---
+        // Mengurutkan berdasarkan 'name' (nama hadiah) secara ascending (A-Z).
+        // Anda juga bisa ganti ke { pointsRequired: "desc" } jika ingin
+        // mengurutkan dari poin tertinggi.
+        orderBy: { name: "asc" },
+      }),
       prisma.reward.count({ where }),
     ])
     return withCors(ok(items, "Rewards", { page, pageSize, total }), request)

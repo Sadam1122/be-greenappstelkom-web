@@ -35,24 +35,27 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const pre = handleCorsPreflight(request)
-  if (pre) return pre
   try {
-    const claims = await requireAuth()
-    requireRole(claims, "SUPERADMIN", "ADMIN")
-    const json = await request.json()
-    const data = upsertFinancialEntrySchema.parse(json)
-    const locationId = claims.role === "SUPERADMIN" ? (json.locationId as string | undefined) : claims.locationId!
-    const createdEntity = await prisma.financialEntry.create({
-      data: {
-        ...data,
-        date: new Date(data.date),
-        createdByUserId: claims.sub,
-        locationId: locationId!,
-      },
-    })
-    return withCors(created(createdEntity, "Financial entry created"), request)
+    const claims = await requireAuth();
+    const json = await request.json();
+    const validatedData = upsertFinancialEntrySchema.parse(json);
+
+    const dataToCreate: any = {
+      ...validatedData,
+      createdByUserId: claims.sub,
+      locationId: claims.locationId,
+    };
+    
+    // Pastikan hanya INCOME dari SUPERADMIN yang bisa punya partnerId
+    if (validatedData.type === 'EXPENSE' || claims.role !== 'SUPERADMIN') {
+        delete dataToCreate.partnerId;
+    }
+
+    const financialEntry = await prisma.financialEntry.create({
+      data: dataToCreate,
+    });
+    return withCors(created(financialEntry), request);
   } catch (e) {
-    return withCors(mapErrorToResponse(e), request)
+    return withCors(mapErrorToResponse(e), request);
   }
 }

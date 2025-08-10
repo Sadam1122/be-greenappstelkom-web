@@ -15,8 +15,8 @@ export async function GET(request: Request) {
   try {
     const claims = await requireAuth()
     const url = new URL(request.url)
-    const parsed = paginationQuery.safeParse(Object.fromEntries(url.searchParams.entries()))
-    const { page = 1, pageSize = 20, search } = parsed.success ? parsed.data : {}
+    const { page = 1, pageSize = 20, search } = paginationQuery.parse(Object.fromEntries(url.searchParams.entries()))
+    
     const where: any = {}
     if (search) {
       where.OR = [
@@ -26,21 +26,26 @@ export async function GET(request: Request) {
       ]
     }
 
+    // SUPERADMIN bisa melihat semua lokasi
     if (claims.role === "SUPERADMIN") {
-      const [items, total] = await Promise.all([
+      const [items, total] = await prisma.$transaction([
         prisma.location.findMany({
           where,
           skip: (page - 1) * pageSize,
           take: pageSize,
-          orderBy: { createdAt: "desc" },
-        } as any),
+          orderBy: { desa: "asc" },
+        }),
         prisma.location.count({ where }),
       ])
       return withCors(ok(items, "Locations", { page, pageSize, total }), request)
     }
-    if (!claims.locationId) throw new ForbiddenError("Location scope required")
+    
+    // Role lain hanya bisa melihat lokasi mereka sendiri
+    if (!claims.locationId) throw new ForbiddenError("Anda tidak terhubung dengan lokasi manapun.")
     const loc = await prisma.location.findUnique({ where: { id: claims.locationId } })
-    return withCors(ok([loc].filter(Boolean), "Locations", { page: 1, pageSize: 1, total: loc ? 1 : 0 }), request)
+    const items = loc ? [loc] : []
+    return withCors(ok(items, "Locations", { page: 1, pageSize: 1, total: items.length }), request)
+
   } catch (e) {
     return withCors(mapErrorToResponse(e), request)
   }

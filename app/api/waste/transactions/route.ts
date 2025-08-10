@@ -18,16 +18,25 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
     const sp = Object.fromEntries(url.searchParams.entries())
     const { page = 1, pageSize = 20 } = paginationQuery.parse(sp)
+    
     const where: any = {}
-    if (claims.role !== "SUPERADMIN") where.locationId = claims.locationId!
-    if (sp.status) where.status = sp.status as any
-    if (sp.type) where.type = sp.type as any
-    if (sp.userId) where.userId = sp.userId
-    if (sp.from || sp.to) {
-      where.createdAt = {}
-      if (sp.from) (where.createdAt as any).gte = new Date(sp.from)
-      if (sp.to) (where.createdAt as any).lte = new Date(sp.to)
+
+    // Filter lokasi diterapkan secara otomatis berdasarkan peran dan token pengguna.
+    // Parameter `locationId` dari URL diabaikan.
+    if (claims.role !== "SUPERADMIN") {
+      where.locationId = claims.locationId!
     }
+    
+    // Filter lainnya tetap berfungsi seperti biasa
+    if (sp.status && sp.status !== 'undefined') where.status = sp.status as any
+    if (sp.type && sp.type !== 'undefined') where.type = sp.type as any
+    if (sp.userId) where.userId = sp.userId
+    if (sp.from && sp.from !== 'undefined' || sp.to && sp.to !== 'undefined') {
+      where.createdAt = {}
+      if (sp.from && sp.from !== 'undefined') (where.createdAt as any).gte = new Date(sp.from)
+      if (sp.to && sp.to !== 'undefined') (where.createdAt as any).lte = new Date(sp.to)
+    }
+
     const [items, total] = await Promise.all([
       prisma.transaction.findMany({
         where,
@@ -51,7 +60,7 @@ export async function POST(request: Request) {
     const claims = await requireAuth()
     const json = await request.json()
     const data = createTransactionSchema.parse(json)
-    // Determine owner NASABAH userId
+    
     let ownerUserId = data.userId
     if (claims.role === "NASABAH") {
       ownerUserId = claims.sub

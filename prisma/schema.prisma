@@ -185,17 +185,20 @@ model Reward {
 
 /// Mitra yang bekerja sama dengan pengelola di sebuah Lokasi (Desa).
 model Partner {
-  id          String     @id @default(cuid())
-  userId      String     @unique
-  user        User       @relation(fields: [userId], references: [id])
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
   companyName String
   type        PartnerType
   address     String?
   phone       String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   locationId  String
-  location    Location   @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  // TAMBAHKAN RELASI INI UNTUK MENYIMPAN RIWAYAT KEUANGAN
+  financialEntries FinancialEntry[]
 
   @@index([locationId])
 }
@@ -203,19 +206,25 @@ model Partner {
 // --- MODEL KEUANGAN & AUDIT ---
 /// Pencatatan keuangan (pemasukan dan pengeluaran) per Lokasi (Desa).
 model FinancialEntry {
-  id                   String              @id @default(cuid())
+  id                   String             @id @default(cuid())
   type                 FinancialEntryType
   amount               Float
   description          String
   date                 DateTime
   relatedTransactionId String?
   createdByUserId      String
-  createdAt            DateTime            @default(now())
+  createdAt            DateTime           @default(now())
   locationId           String
-  location             Location            @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location             Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  // TAMBAHKAN RELASI DI BAWAH INI
+  partnerId            String?            // ID Partner dari mana pemasukan berasal
+  partner              Partner?           @relation(fields: [partnerId], references: [id], onUpdate: NoAction, onDelete: SetNull)
 
   @@index([locationId])
   @@index([type])
+  // Tambahkan index untuk partnerId
+  @@index([partnerId])
 }
 
 /// Riwayat penukaran hadiah oleh pengguna.

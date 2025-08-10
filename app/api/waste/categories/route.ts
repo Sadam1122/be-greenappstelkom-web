@@ -16,17 +16,26 @@ export async function GET(request: Request) {
     const claims = await requireAuth()
     const url = new URL(request.url)
     const { page = 1, pageSize = 20, search } = paginationQuery.parse(Object.fromEntries(url.searchParams.entries()))
+    
     const where: any = {}
-    if (claims.role !== "SUPERADMIN") where.locationId = claims.locationId!
-    if (search) where.name = { contains: search, mode: "insensitive" }
+    
+    if (claims.role !== "SUPERADMIN") {
+      where.locationId = claims.locationId!
+    }
+    
+    if (search) {
+      where.name = { contains: search, mode: "insensitive" }
+    }
 
     const [items, total] = await Promise.all([
       prisma.wasteCategory.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: "desc" },
-      } as any),
+        // --- PERUBAHAN DI SINI ---
+        // Mengurutkan berdasarkan 'name' (nama) secara ascending (A-Z)
+        orderBy: { name: "asc" },
+      }),
       prisma.wasteCategory.count({ where }),
     ])
     return withCors(ok(items, "Waste categories", { page, pageSize, total }), request)
@@ -34,6 +43,8 @@ export async function GET(request: Request) {
     return withCors(mapErrorToResponse(e), request)
   }
 }
+
+// ... (kode POST tetap sama) ...
 
 export async function POST(request: Request) {
   const pre = handleCorsPreflight(request)

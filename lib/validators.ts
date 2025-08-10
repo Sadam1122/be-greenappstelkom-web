@@ -1,28 +1,28 @@
-import { z } from "zod"
+import { z } from "zod";
 
-// Common
+// --- SKEMA UMUM ---
 export const paginationQuery = z.object({
   page: z.coerce.number().int().min(1).default(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).default(20).optional(),
   search: z.string().trim().optional(),
   orderBy: z.string().optional(),
   orderDir: z.enum(["asc", "desc"]).optional(),
-})
+});
 
-// Auth
+// --- SKEMA AUTENTIKASI ---
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-})
+});
 
-// Locations
+// --- SKEMA LOKASI ---
 export const upsertLocationSchema = z.object({
   desa: z.string().min(2).max(100).trim(),
   kecamatan: z.string().min(2).max(100).trim(),
   kabupaten: z.string().min(2).max(100).trim(),
-})
+});
 
-// Users
+// --- SKEMA PENGGUNA ---
 export const createUserSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
@@ -32,7 +32,7 @@ export const createUserSchema = z.object({
   locationId: z.string().nullable().optional(),
   rw: z.string().optional(),
   rt: z.string().optional(),
-})
+});
 
 export const updateUserSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -43,60 +43,70 @@ export const updateUserSchema = z.object({
   avatar: z.string().url().optional(),
   rw: z.string().optional(),
   rt: z.string().optional(),
-})
+});
 
-// Waste Categories
+// --- SKEMA KATEGORI SAMPAH ---
 export const upsertWasteCategorySchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().optional(),
   color: z.string().optional(),
   pointsPerKg: z.coerce.number().int().min(0),
-})
+});
 
-// Transactions
+// --- SKEMA TRANSAKSI ---
 export const createTransactionSchema = z.object({
-  userId: z.string().optional(), // Admin/Petugas can create for user; Nasabah omit
+  userId: z.string().optional(), // Admin/Petugas bisa membuat untuk nasabah; Nasabah tidak perlu mengisi
   wasteCategoryId: z.string(),
   type: z.enum(["PICKUP", "DROPOFF"]),
   locationDetail: z.string().min(3),
   scheduledDate: z.coerce.date(),
   photos: z.array(z.string().url()).optional(),
-})
+});
 
 export const processTransactionSchema = z.object({
   actualWeight: z.coerce.number().positive(),
   notes: z.string().optional(),
-})
+});
 
-// Rewards
+// --- SKEMA HADIAH (REWARDS) ---
 export const upsertRewardSchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().min(1),
   pointsRequired: z.coerce.number().int().min(0),
   stock: z.coerce.number().int().min(0),
   icon: z.string().url().optional(),
-})
+});
 
 export const redeemRewardSchema = z.object({
   rewardId: z.string(),
-})
+});
 
-// TPS3R, Partners, Financial
+// --- SKEMA LAINNYA (TPS3R, PARTNER, KEUANGAN) ---
 export const upsertTPS3RSchema = z.object({
   name: z.string().min(2).max(100),
   status: z.string().min(1),
   capacity: z.coerce.number().min(0),
   currentLoad: z.coerce.number().min(0),
   manager: z.string().min(2).max(100),
-})
+});
 
-export const upsertPartnerSchema = z.object({
-  userId: z.string(),
+// Skema dasar untuk data Partner yang bisa diubah
+const partnerBaseSchema = z.object({
   companyName: z.string().min(2),
   type: z.enum(["GOVERNMENT", "INSTITUTION", "COLLECTOR", "OTHER"]),
   address: z.string().optional(),
   phone: z.string().optional(),
-})
+});
+
+// Skema untuk MEMBUAT partner baru (memerlukan userId dan locationId)
+export const createPartnerSchema = partnerBaseSchema.extend({
+  userId: z.string().min(1, { message: "Pengguna harus dipilih" }),
+  locationId: z.string().min(1, { message: "Lokasi wajib dipilih" }),
+});
+
+// Skema untuk MENGEDIT partner (semua field opsional dan tidak boleh mengubah userId/locationId)
+export const updatePartnerSchema = partnerBaseSchema.partial();
+
 
 export const upsertFinancialEntrySchema = z.object({
   type: z.enum(["INCOME", "EXPENSE"]),
@@ -104,4 +114,6 @@ export const upsertFinancialEntrySchema = z.object({
   description: z.string().min(1),
   date: z.coerce.date(),
   relatedTransactionId: z.string().optional(),
-})
+  // partnerId ditambahkan agar bisa mencatat pemasukan dari mitra
+  partnerId: z.string().optional(),
+});
