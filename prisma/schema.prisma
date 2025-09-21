@@ -16,6 +16,12 @@ enum Role {
   NASABAH
 }
 
+enum RedemptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum TransactionType {
   PICKUP
   DROPOFF
@@ -175,7 +181,7 @@ model Reward {
   description    String
   pointsRequired Int
   stock          Int
-  icon           String?
+  imageUrl       String? 
   locationId     String
   location       Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
   redemptions    RewardRedemption[]
@@ -235,6 +241,7 @@ model RewardRedemption {
   rewardId    String
   reward      Reward   @relation(fields: [rewardId], references: [id])
   pointsSpent Int
+  status      RedemptionStatus @default(PENDING) // ADD THIS LINE
   redeemedAt  DateTime @default(now())
 
   @@index([userId, rewardId])

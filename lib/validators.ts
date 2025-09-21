@@ -71,10 +71,10 @@ export const processTransactionSchema = z.object({
 // --- SKEMA HADIAH (REWARDS) ---
 export const upsertRewardSchema = z.object({
   name: z.string().min(2).max(100),
-  description: z.string().min(1),
+  description: z.string().optional(),
   pointsRequired: z.coerce.number().int().min(0),
   stock: z.coerce.number().int().min(0),
-  icon: z.string().url().optional(),
+  imageUrl: z.string().optional(),
 });
 
 export const redeemRewardSchema = z.object({

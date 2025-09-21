@@ -1,3 +1,5 @@
+// File: beai/app/api/rewards/route.ts
+
 import { prisma } from "@/lib/prisma"
 import { ok, created } from "@/lib/response"
 import { mapErrorToResponse } from "@/lib/error"
@@ -25,10 +27,6 @@ export async function GET(request: Request) {
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        // --- PERBAIKAN DI SINI ---
-        // Mengurutkan berdasarkan 'name' (nama hadiah) secara ascending (A-Z).
-        // Anda juga bisa ganti ke { pointsRequired: "desc" } jika ingin
-        // mengurutkan dari poin tertinggi.
         orderBy: { name: "asc" },
       }),
       prisma.reward.count({ where }),
@@ -40,17 +38,34 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const pre = handleCorsPreflight(request)
-  if (pre) return pre
+  const pre = handleCorsPreflight(request);
+  if (pre) return pre;
   try {
-    const claims = await requireAuth()
-    requireRole(claims, "SUPERADMIN", "ADMIN")
-    const json = await request.json()
-    const data = upsertRewardSchema.parse(json)
-    const locationId = claims.role === "SUPERADMIN" ? (json.locationId as string | undefined) : claims.locationId!
-    const createdReward = await prisma.reward.create({ data: { ...data, locationId: locationId! } })
-    return withCors(created(createdReward, "Reward created"), request)
+    const claims = await requireAuth();
+    requireRole(claims, "SUPERADMIN", "ADMIN");
+    const json = await request.json();
+    
+    // Zod now correctly parses optional fields
+    const validatedData = upsertRewardSchema.parse(json); 
+    
+    const locationId = claims.role === "SUPERADMIN" ? (json.locationId as string | undefined) : claims.locationId!;
+    
+    // **THE FIX:** Build the data object safely, excluding undefined fields.
+    const dataToCreate = {
+      name: validatedData.name,
+      pointsRequired: validatedData.pointsRequired,
+      stock: validatedData.stock,
+      locationId: locationId!,
+      description: validatedData.description ?? "",
+      imageUrl: validatedData.imageUrl ?? "",
+    };
+    
+    const createdReward = await prisma.reward.create({
+      data: dataToCreate
+    });
+    
+    return withCors(created(createdReward, "Reward created"), request);
   } catch (e) {
-    return withCors(mapErrorToResponse(e), request)
+    return withCors(mapErrorToResponse(e), request);
   }
 }
