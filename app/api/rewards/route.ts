@@ -6,6 +6,7 @@ import { mapErrorToResponse } from "@/lib/error"
 import { withCors, handleCorsPreflight } from "@/lib/cors"
 import { requireAuth, requireRole } from "@/lib/auth"
 import { paginationQuery, upsertRewardSchema } from "@/lib/validators"
+import { ZodError } from "zod"      // <-- IMPORT ZodError
 
 export async function OPTIONS(request: Request) {
   return handleCorsPreflight(request) ?? new Response(null, { status: 204 })
@@ -38,34 +39,82 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const pre = handleCorsPreflight(request);
-  if (pre) return pre;
+  const pre = handleCorsPreflight(request)
+  if (pre) return pre
+
   try {
-    const claims = await requireAuth();
-    requireRole(claims, "SUPERADMIN", "ADMIN");
-    const json = await request.json();
-    
-    // Zod now correctly parses optional fields
-    const validatedData = upsertRewardSchema.parse(json); 
-    
-    const locationId = claims.role === "SUPERADMIN" ? (json.locationId as string | undefined) : claims.locationId!;
-    
-    // **THE FIX:** Build the data object safely, excluding undefined fields.
-    const dataToCreate = {
+    const claims = await requireAuth()
+    requireRole(claims, "SUPERADMIN", "ADMIN")
+
+    const json = await request.json()
+    const validatedData = upsertRewardSchema.parse(json)
+
+    const locationIdFromBody =
+      typeof json?.locationId === "string" && json.locationId.trim() !== ""
+        ? json.locationId.trim()
+        : undefined
+
+    let finalLocationId: string | null = null
+    if (claims.role === "SUPERADMIN") {
+      if (!locationIdFromBody) {
+        return withCors(
+          new Response(
+            JSON.stringify({
+              status: "error",
+              message: "locationId is required for SUPERADMIN when creating a reward",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          ),
+          request
+        )
+      }
+      finalLocationId = locationIdFromBody
+    } else {
+      if (!claims.locationId) {
+        return withCors(
+          new Response(
+            JSON.stringify({
+              status: "error",
+              message: "Admin user does not have an associated location",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          ),
+          request
+        )
+      }
+      finalLocationId = claims.locationId
+    }
+
+    const dataToCreate: any = {
       name: validatedData.name,
       pointsRequired: validatedData.pointsRequired,
       stock: validatedData.stock,
-      locationId: locationId!,
-      description: validatedData.description ?? "",
-      imageUrl: validatedData.imageUrl ?? "",
-    };
-    
+      locationId: finalLocationId,
+      description: validatedData.description ?? null,
+      imageUrl: validatedData.imageUrl ?? null,
+    }
+
     const createdReward = await prisma.reward.create({
-      data: dataToCreate
-    });
-    
-    return withCors(created(createdReward, "Reward created"), request);
-  } catch (e) {
-    return withCors(mapErrorToResponse(e), request);
+      data: dataToCreate,
+    })
+
+    return withCors(created(createdReward, "Reward created"), request)
+  } catch (e: any) {
+    // Pastikan kita bisa deteksi ZodError — import sudah ditambahkan di atas.
+    if (e instanceof ZodError) {
+      console.error("POST /api/rewards ZOD validation error:", JSON.stringify(e.flatten(), null, 2))
+      const body = {
+        status: "error",
+        message: "Validation error",
+        details: e.flatten(),
+      }
+      return withCors(
+        new Response(JSON.stringify(body), { status: 422, headers: { "Content-Type": "application/json" } }),
+        request
+      )
+    }
+
+    console.error("POST /api/rewards ERROR:", e)
+    return withCors(mapErrorToResponse(e), request)
   }
 }
