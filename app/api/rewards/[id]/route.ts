@@ -19,9 +19,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const claims = await requireAuth();
     requireRole(claims, "SUPERADMIN", "ADMIN");
 
-    const { id } = params;
-    const json = await request.json();
+    // Next.js warning: await params before using properties
+    const { id } = (await params) as { id: string };
 
+    const json = await request.json();
     const validatedData = upsertRewardSchema.partial().parse(json);
 
     const existingReward = await prisma.reward.findUnique({ where: { id } });
@@ -42,6 +43,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   } catch (e) {
     if (e instanceof ZodError) {
       console.error("ZOD VALIDATION ERROR DETAILS:", JSON.stringify(e.flatten(), null, 2));
+    } else {
+      console.error("PUT /api/rewards/[id] ERROR:", e);
     }
     return withCors(mapErrorToResponse(e), request);
   }
@@ -53,12 +56,30 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   try {
     const claims = await requireAuth();
     requireRole(claims, "SUPERADMIN", "ADMIN");
-    const existing = await prisma.reward.findUnique({ where: { id: params.id } });
+
+    // await params as Next.js suggests
+    const { id } = (await params) as { id: string };
+
+    const existing = await prisma.reward.findUnique({ where: { id } });
     if (!existing) return withCors(ok(null, "Not found"), request);
+
     if (claims.role !== "SUPERADMIN") enforceLocationScope(claims, existing.locationId);
-    const deleted = await prisma.reward.delete({ where: { id: params.id } });
-    return withCors(ok(deleted, "Reward deleted"), request);
+
+    // Hapus record anak yang merujuk ke reward ini dulu (agar tidak melanggar FK)
+    // Ganti `rewardRedemption` jika model Prisma kamu bernama lain.
+    await prisma.$transaction([
+      prisma.rewardRedemption.deleteMany({ where: { rewardId: id } }),
+      // jika ada tabel/tabel lain yang juga berelasi dengan reward, hapus juga di sini
+      prisma.reward.delete({ where: { id } }),
+    ]);
+
+    return withCors(ok({ id }, "Reward deleted"), request);
   } catch (e) {
+    // Laporkan error di log supaya mudah debugging
+    console.error("DELETE /api/rewards/[id] ERROR:", e);
+
+    // Jika masih ada constraint error walau sudah deleteMany, cetak detail untuk investigasi:
+    // (mapErrorToResponse akan mengembalikan struktur response yang konsisten)
     return withCors(mapErrorToResponse(e), request);
   }
 }
